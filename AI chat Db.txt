@@ -1,0 +1,1055 @@
+﻿Conversation Vault – Requirements Specification (v1.0)
+
+
+1. Overview
+
+
+Name (working): Conversation Vault
+Purpose:
+A local web application that imports, normalizes, stores, and lets the user browse/search/export conversation history from multiple LLM providers (initially OpenAI/ChatGPT and Anthropic/Claude) into a PostgreSQL database.
+
+
+The system should:
+
+
+Support multiple providers via a plugin-like architecture.
+
+
+Allow managing multiple API keys per provider.
+
+
+Import conversations and related metadata/artifacts where possible.
+
+
+Provide a web UI for browsing, searching, reading, tagging, and exporting conversations.
+
+
+Keep all data and keys fully local to the user’s machine.
+
+
+
+
+
+
+---
+
+
+2. Scope
+
+
+2.1 In-Scope (v1.0)
+
+
+Backend API (Python) exposing REST endpoints.
+
+
+PostgreSQL schema and migration(s).
+
+
+Web UI for:
+
+
+Managing providers and API keys.
+
+
+Running import jobs.
+
+
+Browsing and searching conversations.
+
+
+Viewing conversation details and attachments.
+
+
+Exporting individual conversations to Markdown.
+
+
+
+
+Pluggable provider integration for:
+
+
+OpenAI / ChatGPT.
+
+
+Anthropic / Claude.
+
+
+
+
+Basic error handling and logging, including partial import failures (e.g., missing/failed artifacts).
+
+
+
+
+2.2 Out-of-Scope (v1.0, possible v1.1+)
+
+
+Rich conversation editing / curated transcripts (kept in separate tables).
+
+
+Cross-conversation semantic search (embeddings).
+
+
+Auth for multiple human users (v1.0 can assume single trusted user on localhost).
+
+
+Sophisticated role-based access control.
+
+
+
+
+
+
+---
+
+
+3. Target Environment & Technology
+
+
+OS: Ubuntu (local machine).
+
+
+Database: PostgreSQL.
+
+
+Backend: Python 3.10+ (recommended):
+
+
+Framework: FastAPI or similar ASGI framework.
+
+
+ORM: SQLAlchemy (or SQLModel / equivalent).
+
+
+
+
+Frontend:
+
+
+Option 1: Single-page app (React/Vue/Svelte) consuming JSON APIs.
+
+
+Option 2: Server-rendered minimal HTML templates (Jinja2) if simplicity is preferred.
+
+
+
+
+Deployment: Local (e.g. uvicorn or gunicorn + nginx), bound to localhost or LAN as desired.
+
+
+
+
+
+
+---
+
+
+4. Functional Requirements
+
+
+4.1 Provider & API Key Management
+
+
+FR-001 – The system shall maintain a list of known providers (e.g., OpenAI, Anthropic) with metadata and configuration.
+
+
+FR-002 – The system shall allow the user to add one or more API keys per provider.
+
+
+Input fields: provider, label, api_key_value.
+
+
+
+
+FR-003 – API keys shall be stored only on the backend (never exposed to the frontend as raw values).
+
+
+Frontend should only see: id, label, provider, created_at, last_used_at, is_active.
+
+
+
+
+FR-004 – The user shall be able to deactivate (soft-disable) an API key without deleting it.
+
+
+FR-005 – When making outbound calls to providers, the backend shall reference API keys by their internal ID.
+
+
+
+
+---
+
+
+4.2 Import Jobs
+
+
+FR-010 – The system shall allow the user to create an import job for a given provider + API key, specifying:
+
+
+Provider.
+
+
+API key (by label).
+
+
+Optional date range (from_date, to_date).
+
+
+Optional basic filters if supported by provider (e.g., “import only conversations updated since X”).
+
+
+
+
+FR-011 – Creating an import job shall:
+
+
+Insert a row into an import_jobs table with status running (or equivalent initial state).
+
+
+Trigger a background task (or long-running request) that calls the provider-specific importer.
+
+
+
+
+FR-012 – Importing shall:
+
+
+Retrieve a list of provider-specific conversations.
+
+
+For each conversation:
+
+
+Normalise data into conversations table.
+
+
+Import messages into messages table.
+
+
+If supported, attempt to retrieve and store artifacts/attachments into artifacts table.
+
+
+Store any relevant provider metadata into JSONB fields.
+
+
+
+
+
+
+FR-013 – The importer shall handle:
+
+
+Network and API errors gracefully.
+
+
+Partial failures (e.g., if artifacts fail but messages succeed).
+
+
+Provider rate limiting, where applicable (e.g., simple backoff).
+
+
+
+
+FR-014 – On completion (success, partial, or failure), the import job shall record:
+
+
+status: success, partial, or failed.
+
+
+Counts: how many conversations, messages, artifacts imported.
+
+
+Short summary text.
+
+
+Optional error_details text.
+
+
+
+
+
+
+---
+
+
+4.3 Conversation Storage & Structure
+
+
+FR-020 – The system shall store conversations in a provider-agnostic schema with at least:
+
+
+conversations – one row per logical conversation/thread.
+
+
+messages – one row per message inside a conversation.
+
+
+artifacts – one row per artifact/attachment, linked to a conversation and optionally a specific message.
+
+
+
+
+FR-021 – For each conversation, the system shall store at least:
+
+
+Provider ID / name.
+
+
+Provider’s conversation ID (if any).
+
+
+Title (if available; otherwise generated or left null).
+
+
+Start/end timestamps (or approximate).
+
+
+Import job reference.
+
+
+Raw metadata (JSONB).
+
+
+
+
+FR-022 – For each message, the system shall store at least:
+
+
+Conversation FK.
+
+
+Provider message ID (if available).
+
+
+Role (user, assistant, system, tool, etc.).
+
+
+Timestamp (if available; else approximate ordering).
+
+
+Content (text).
+
+
+Sequence/order index.
+
+
+Raw metadata (JSONB).
+
+
+
+
+FR-023 – For each artifact, the system shall store at least:
+
+
+Conversation FK.
+
+
+Optional Message FK (if tied to one message).
+
+
+Artifact type (simple enum: file, image, canvas, code, other).
+
+
+Filename (if applicable).
+
+
+MIME type (if known).
+
+
+Storage location (e.g., filesystem path or null if not downloaded).
+
+
+Download status: success, not_supported, error.
+
+
+Download error text, if any.
+
+
+Raw metadata (JSONB).
+
+
+
+
+
+
+---
+
+
+4.4 Projects & Tagging (basic v1.0, extendable later)
+
+
+FR-030 – The system shall support an optional projects concept.
+
+
+A conversation can be associated with zero or more projects.
+
+
+
+
+FR-031 – The user shall be able to:
+
+
+Create and rename projects.
+
+
+Associate conversations with projects from the conversation detail view.
+
+
+
+
+(Advanced message-level tags can be deferred to v1.1.)
+
+
+
+
+---
+
+
+4.5 Browsing & Search
+
+
+FR-040 – The system shall provide a conversation list view with:
+
+
+Filters:
+
+
+Provider
+
+
+Date range (by conversation started_at)
+
+
+Project
+
+
+Presence of artifacts (has / does not have)
+
+
+
+
+Sorting:
+
+
+By started_at (asc/desc)
+
+
+By ended_at (asc/desc)
+
+
+By title (asc/desc)
+
+
+
+
+
+
+FR-041 – The conversation list view shall display key columns:
+
+
+Title
+
+
+Provider
+
+
+Start date
+
+
+Message count
+
+
+Project(s)
+
+
+Indicator if artifacts exist
+
+
+
+
+FR-042 – The system shall support a text search field that searches across:
+
+
+Conversation titles
+
+
+Message contents
+(for v1.0, this can be a simple ILIKE query; full-text indexing may be added later.)
+
+
+
+
+FR-043 – The system shall provide a conversation detail view that shows:
+
+
+Basic metadata (title, provider, timestamps, projects).
+
+
+Messages rendered in chronological order with clear role labels.
+
+
+List of artifacts with their type and download status.
+
+
+Controls for:
+
+
+Export to Markdown.
+
+
+Assigning/removing projects.
+
+
+
+
+
+
+
+
+---
+
+
+4.6 Export to Markdown
+
+
+FR-050 – The system shall support exporting a single conversation to a Markdown file via the UI.
+
+
+FR-051 – The exported Markdown format shall include:
+
+
+# {Title} (or a fallback if no title).
+
+
+A metadata section including:
+
+
+Provider name
+
+
+Conversation ID
+
+
+Start/end timestamps
+
+
+Project(s)
+
+
+
+
+Messages in order, with roles clearly marked, e.g.:
+
+
+
+
+**User:** Hello...
+
+
+**Assistant:** Hi there...
+
+
+FR-052 – Artifacts/attachments in the export shall be represented by simple references such as:
+
+
+Attachment: {filename} ({artifact_type}, status={download_status})
+
+
+Optionally, where feasible, relative paths to stored files can be included.
+
+
+
+
+---
+
+
+4.7 Attachments & Canvas-like Artifacts
+
+
+FR-060 – The importer shall attempt to retrieve and store any provider-supported artifacts (e.g., files, images, “canvas” objects) referenced in a conversation, if provider APIs or exports make them accessible.
+
+
+FR-061 – If an artifact cannot be retrieved or is not supported by the provider’s API:
+
+
+The artifact row shall be created with download_status = 'not_supported' or 'error'.
+
+
+A short explanation shall be stored in download_error or artifact notes.
+
+
+
+
+FR-062 – The UI shall display attachment status distinctly so the user can see which attachments are missing or unsupported.
+
+
+
+
+---
+
+
+4.8 Editing & Parallel Versions (v1.1+)
+
+
+(Design now, implement later.)
+
+
+FR-070 – The system shall support storing edited/curated versions of a conversation as Markdown in a separate table (e.g., conversation_edits), without altering the original raw data.
+
+
+FR-071 – Each edited version shall include:
+
+
+Conversation FK.
+
+
+A label/name (e.g., “Cleaned-up draft”, “Blog-ready”).
+
+
+Full Markdown content.
+
+
+Created/last modified timestamps.
+
+
+Optional notes.
+
+
+
+
+FR-072 – The UI shall allow selecting between the original and edited versions and, where useful, viewing them side-by-side.
+
+
+
+
+---
+
+
+5. Non-Functional Requirements
+
+
+5.1 Security
+
+
+NFR-001 – API keys must never be sent to the frontend or logged in plain text.
+NFR-002 – The server shall bind to localhost by default; exposing it externally should require an explicit configuration change.
+NFR-003 – Sensitive fields (e.g., API keys) should be stored encrypted at rest if reasonably straightforward; otherwise, at minimum, stored in a location with restricted filesystem permissions.
+
+
+5.2 Performance / Scalability
+
+
+NFR-010 – The system should comfortably support at least tens of thousands of messages and hundreds to thousands of conversations without noticeable UI lag.
+NFR-011 – Import jobs may run for several minutes; the UI should periodically refresh status (polling is sufficient).
+
+
+5.3 Reliability
+
+
+NFR-020 – Import jobs should be idempotent as far as practical: re-importing the same conversations should not create unbounded duplicates.
+
+
+At minimum, (provider_id, provider_conversation_id) pairs should be unique.
+
+
+
+
+NFR-021 – A basic logging mechanism should record import errors and major events.
+
+
+5.4 Extensibility
+
+
+NFR-030 – New providers shall be addable by implementing a standard “provider adapter” interface and registering it in configuration, without needing to change the core database schema.
+
+
+
+
+---
+
+
+6. Data Model (Logical)
+
+
+(Types are indicative, not strict SQL syntax.)
+
+
+6.1 providers
+
+
+id (PK, UUID or serial)
+
+
+name (TEXT, unique, e.g., "openai", "anthropic")
+
+
+display_name (TEXT, e.g., "ChatGPT", "Claude")
+
+
+base_api_url (TEXT, nullable)
+
+
+schema_version (TEXT, nullable)
+
+
+notes (TEXT, nullable)
+
+
+
+
+6.2 api_keys
+
+
+id (PK)
+
+
+provider_id (FK -> providers.id)
+
+
+label (TEXT)
+
+
+key_encrypted (TEXT or BYTEA)
+
+
+is_active (BOOLEAN, default TRUE)
+
+
+created_at (TIMESTAMP WITH TIME ZONE)
+
+
+last_used_at (TIMESTAMP WITH TIME ZONE, nullable)
+
+
+
+
+6.3 projects
+
+
+id (PK)
+
+
+name (TEXT, unique per user)
+
+
+description (TEXT, nullable)
+
+
+created_at (TIMESTAMPTZ)
+
+
+
+
+6.4 conversations
+
+
+id (PK)
+
+
+provider_id (FK -> providers.id)
+
+
+provider_conversation_id (TEXT, nullable, unique with provider_id)
+
+
+title (TEXT, nullable)
+
+
+started_at (TIMESTAMPTZ, nullable)
+
+
+ended_at (TIMESTAMPTZ, nullable)
+
+
+origin (TEXT, e.g., 'api', 'export', 'manual')
+
+
+import_job_id (FK -> import_jobs.id, nullable)
+
+
+import_notes (TEXT, nullable)
+
+
+archived (BOOLEAN, default FALSE)
+
+
+raw_metadata (JSONB, nullable)
+
+
+
+
+6.5 conversation_projects (join)
+
+
+conversation_id (FK -> conversations.id)
+
+
+project_id (FK -> projects.id)
+
+
+PK on (conversation_id, project_id)
+
+
+
+
+6.6 messages
+
+
+id (PK)
+
+
+conversation_id (FK -> conversations.id, indexed)
+
+
+provider_message_id (TEXT, nullable)
+
+
+role (TEXT: 'user', 'assistant', 'system', 'tool', etc.)
+
+
+created_at (TIMESTAMPTZ, nullable)
+
+
+sequence_index (INTEGER, not null)  // ordering within conversation
+
+
+content (TEXT)
+
+
+raw_metadata (JSONB, nullable)
+
+
+
+
+6.7 artifacts
+
+
+id (PK)
+
+
+conversation_id (FK -> conversations.id, indexed)
+
+
+message_id (FK -> messages.id, nullable)
+
+
+artifact_type (TEXT: 'file', 'image', 'canvas', 'code', 'other')
+
+
+provider_artifact_id (TEXT, nullable)
+
+
+filename (TEXT, nullable)
+
+
+mime_type (TEXT, nullable)
+
+
+storage_path (TEXT, nullable)
+
+
+download_status (TEXT: 'success', 'not_supported', 'error')
+
+
+download_error (TEXT, nullable)
+
+
+notes (TEXT, nullable)
+
+
+raw_metadata (JSONB, nullable)
+
+
+
+
+6.8 import_jobs
+
+
+id (PK)
+
+
+provider_id (FK -> providers.id)
+
+
+api_key_id (FK -> api_keys.id)
+
+
+started_at (TIMESTAMPTZ)
+
+
+finished_at (TIMESTAMPTZ, nullable)
+
+
+status (TEXT: 'running', 'success', 'partial', 'failed')
+
+
+requested_range (JSONB, nullable)  // e.g., from_date, to_date
+
+
+summary (TEXT, nullable)
+
+
+error_details (TEXT, nullable)
+
+
+
+
+6.9 conversation_edits (for v1.1+)
+
+
+id (PK)
+
+
+conversation_id (FK -> conversations.id)
+
+
+label (TEXT)
+
+
+edited_markdown (TEXT)
+
+
+created_at (TIMESTAMPTZ)
+
+
+last_modified_at (TIMESTAMPTZ)
+
+
+notes (TEXT, nullable)
+
+
+base_conversation_hash (TEXT, nullable)
+
+
+
+
+
+
+---
+
+
+7. Provider Adapter Interface (Conceptual)
+
+
+Define a Python interface/class that provider adapters must implement, e.g.:
+
+
+class ConversationProviderAdapter:
+    def list_conversations(self, api_key: str, options: dict) -> list[ProviderConversationSummary]:
+        ...
+
+
+    def fetch_conversation(self, api_key: str, conversation_id: str) -> ProviderConversationDetail:
+        ...
+
+
+    def fetch_artifacts(self, api_key: str, conversation_detail: ProviderConversationDetail) -> list[ProviderArtifact]:
+        ...
+
+
+Where ProviderConversationSummary, ProviderConversationDetail, and ProviderArtifact are internal Python dataclasses that represent a normalised view, which the importer then maps to database rows.
+
+
+Adapters for OpenAI and Anthropic must be implemented first; they may work via:
+
+
+Direct API logging of new conversations, and/or
+
+
+Import from provider-exported JSON/HTML files, depending on what is practically available.
+
+
+
+
+
+
+---
+
+
+8. API Endpoints (High-Level)
+
+
+(Paths and shapes can be refined by the implementer, but this outlines the minimum set.)
+
+
+8.1 Providers & API Keys
+
+
+GET /providers → list providers.
+
+
+GET /api-keys → list keys (without exposing actual secret).
+
+
+POST /api-keys → create key: { provider_id, label, api_key }.
+
+
+PATCH /api-keys/{id} → update label / is_active.
+
+
+DELETE /api-keys/{id} → delete key (optional in v1.0).
+
+
+
+
+8.2 Import Jobs
+
+
+POST /import-jobs
+Request: { provider_id, api_key_id, from_date?, to_date? }
+Response: { job_id }.
+
+
+GET /import-jobs → list jobs with summary fields.
+
+
+GET /import-jobs/{id} → job detail (status, summary, counts).
+
+
+
+
+8.3 Conversations & Messages
+
+
+GET /conversations
+Query params: provider_id?, project_id?, from_date?, to_date?, search?
+Returns paginated list.
+
+
+GET /conversations/{id}
+Returns conversation metadata, messages, and artifacts.
+
+
+POST /conversations/{id}/projects
+Body: { project_id } – assigns project.
+
+
+DELETE /conversations/{id}/projects/{project_id}
+Remove project association.
+
+
+
+
+8.4 Projects
+
+
+GET /projects
+
+
+POST /projects – create project.
+
+
+PATCH /projects/{id} – rename/update.
+
+
+DELETE /projects/{id} (optional).
+
+
+
+
+8.5 Export
+
+
+GET /conversations/{id}/export-markdown
+Returns text/markdown content as a download.
