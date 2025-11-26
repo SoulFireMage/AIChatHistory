@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Vault</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 Conversation Vault</h1>
+            <p class="subtitle">Manage your LLM conversation history</p>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="conversations">Conversations</button>
+            <button class="tab-btn" data-tab="projects">Projects</button>
+            <button class="tab-btn" data-tab="api-keys">API Keys</button>
+            <button class="tab-btn" data-tab="import">Import</button>
+        </nav>
+
+        <!-- Conversations Tab -->
+        <div id="conversations" class="tab-content active">
+            <div class="filters">
+                <input type="text" id="search" placeholder="Search conversations...">
+                <select id="provider-filter">
+                    <option value="">All Providers</option>
+                </select>
+                <select id="project-filter">
+                    <option value="">All Projects</option>
+                </select>
+                <button id="apply-filters">Search</button>
+            </div>
+
+            <div id="conversation-list" class="conversation-list">
+                <p class="loading">Loading conversations...</p>
+            </div>
+
+            <div id="conversation-detail" class="conversation-detail" style="display: none;">
+                <button id="back-btn" class="btn-secondary">← Back to List</button>
+                <div id="conversation-content"></div>
+            </div>
+        </div>
+
+        <!-- Projects Tab -->
+        <div id="projects" class="tab-content">
+            <div class="section-header">
+                <h2>Projects</h2>
+                <button id="add-project-btn" class="btn-primary">+ New Project</button>
+            </div>
+            <div id="projects-list"></div>
+
+            <div id="add-project-form" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Create New Project</h3>
+                    <input type="text" id="project-name" placeholder="Project name" required>
+                    <textarea id="project-description" placeholder="Description (optional)"></textarea>
+                    <div class="modal-actions">
+                        <button id="save-project-btn" class="btn-primary">Create</button>
+                        <button id="cancel-project-btn" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Keys Tab -->
+        <div id="api-keys" class="tab-content">
+            <div class="section-header">
+                <h2>API Keys</h2>
+                <button id="add-api-key-btn" class="btn-primary">+ New API Key</button>
+            </div>
+            <div id="api-keys-list"></div>
+
+            <div id="add-api-key-form" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Add New API Key</h3>
+                    <select id="api-key-provider" required>
+                        <option value="">Select Provider...</option>
+                    </select>
+                    <input type="text" id="api-key-label" placeholder="Label (e.g., 'Personal Key')" required>
+                    <input type="password" id="api-key-value" placeholder="API Key" required>
+                    <div class="modal-actions">
+                        <button id="save-api-key-btn" class="btn-primary">Save</button>
+                        <button id="cancel-api-key-btn" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Tab -->
+        <div id="import" class="tab-content">
+            <div class="section-header">
+                <h2>Import Conversations</h2>
+                <button id="start-import-btn" class="btn-primary">+ New Import</button>
+            </div>
+
+            <div id="import-jobs-list"></div>
+
+            <div id="start-import-form" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Start Import Job</h3>
+                    <select id="import-provider" required>
+                        <option value="">Select Provider...</option>
+                    </select>
+                    <select id="import-api-key" required>
+                        <option value="">Select API Key...</option>
+                    </select>
+                    <p class="note">Note: OpenAI and Anthropic do not currently provide APIs to export conversation history. Import functionality is a placeholder for future development or file-based imports.</p>
+                    <div class="modal-actions">
+                        <button id="run-import-btn" class="btn-primary">Start Import</button>
+                        <button id="cancel-import-btn" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
